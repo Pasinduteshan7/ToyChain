@@ -1,0 +1,53 @@
+{
+  "blocks": [
+    {
+      "height": 0,
+      "timestamp": 0,
+      "transactions": [],
+      "prev_hash": "0000000000000000000000000000000000000000000000000000000000000",
+      "nonce": 0,
+      "hash": "6aeab8c4bb5331541554ccef35172b511c357480854f7cd468daac3495553dac"
+    },
+    {
+      "height": 1,
+      "timestamp": 1783595260,
+      "transactions": [
+        {
+          "sender": "",
+          "recipient": "alice",
+          "amount": 100
+        },
+        {
+          "sender": "alice",
+          "recipient": "bob",
+          "amount": 1000
+        }
+      ],
+      "prev_hash": "6aeab8c4bb5331541554ccef35172b511c357480854f7cd468daac3495553dac",
+      "nonce": 1035,
+      "hash": "00092a617756eeaf236960c1f6daace8b958a6ccee51eef206f242dd76e8d36c"
+    },
+    {
+      "height": 2,
+      "timestamp": 1783595363,
+      "transactions": [
+        {
+          "sender": "",
+          "recipient": "alice",
+          "amount": 100
+        },
+        {
+          "sender": "alice",
+          "recipient": "bob",
+          "amount": 30
+        }
+      ],
+      "prev_hash": "00092a617756eeaf236960c1f6daace8b958a6ccee51eef206f242dd76e8d36c",
+      "nonce": 644,
+      "hash": "0009f37f51526e70aba20df1f6ef2aad58d38a98495568e57ec56f3d8d169092"
+    }
+  ],
+  "difficulty": 3,
+  "max_block_size": 0,
+  "pending": []
+}
