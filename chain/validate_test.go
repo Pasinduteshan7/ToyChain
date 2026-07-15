@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"toychain/block"
 	"toychain/ledger"
 )
 
@@ -73,7 +74,7 @@ func TestValidate_DetectsBrokenPrevHashLink(t *testing.T) {
 	// so it individually satisfies the PoW target again.
 	target := strings.Repeat("0", bc.Difficulty)
 	tampered := bc.Blocks[1]
-	tampered.Transactions[0].Amount = 500
+	tampered.Transactions[0].Amount = 90
 	tampered.Nonce = 0
 	tampered.Hash = tampered.CalculateHash()
 	for !strings.HasPrefix(tampered.Hash, target) {
@@ -126,5 +127,32 @@ func TestMinePending_RespectsMaxBlockSize(t *testing.T) {
 	}
 	if len(bc.Pending) != 1 {
 		t.Fatalf("expected 1 transaction left pending, got %d", len(bc.Pending))
+	}
+}
+
+// TestValidate_CatchesLedgerViolation ensures that Validate() replays the ledger
+// and flags any block containing an illegal transaction (e.g. negative amount),
+// even if the block's hash and proof-of-work are mathematically perfect.
+func TestValidate_CatchesLedgerViolation(t *testing.T) {
+	bc := New(1)
+
+	// Create an illegal transaction (negative amount)
+	illegalTx := ledger.Transaction{Sender: "", Recipient: "hacker", Amount: -500}
+
+	// Force it into a block (bypassing normal AddTransaction/MineBlock checks)
+	b := block.New(1, 1234567890, []ledger.Transaction{illegalTx}, bc.Blocks[0].Hash)
+	target := strings.Repeat("0", bc.Difficulty)
+	for !strings.HasPrefix(b.Hash, target) {
+		b.Nonce++
+		b.Hash = b.CalculateHash()
+	}
+	bc.Blocks = append(bc.Blocks, b)
+
+	res := bc.Validate()
+	if res.Valid {
+		t.Fatal("expected chain to be invalid due to illegal transaction, but it was marked valid")
+	}
+	if !strings.Contains(res.Reason, "invalid transaction") {
+		t.Fatalf("expected failure reason to mention invalid transaction, got: %s", res.Reason)
 	}
 }

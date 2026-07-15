@@ -1,17 +1,6 @@
-# Compiled binary
 toychain.exe
-toychain
-
-# Chain data files (generated at runtime)
 chain.json
-
-# IDE / editor
-.idea/
-.vscode/
-*.swp
-*.swo
-*~
-
-# OS files
-.DS_Store
-Thumbs.db
+*.json
+!demo.json
+*~  
+ 

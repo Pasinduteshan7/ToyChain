@@ -1,3 +1,30 @@
+// =============================================================================
+// chain/validate.go — Chain Validation & Tamper Detection (FR-6).
+//
+// CONCEPT: Chain Validation (The Security Auditor)
+//
+//	Validation is the blockchain's immune system. It scans the ENTIRE chain
+//	from genesis to tip, checking that nobody edited an old transaction,
+//	forged a hash, or broke the chain's structure.
+//
+//	WHY THIS WORKS: Remember the "avalanche effect" of SHA-256 — change
+//	one comma in a block, and its hash changes COMPLETELY. But the NEXT
+//	block stores the original hash in its PrevHash field. So tampering
+//	with Block 5 causes a mismatch at Block 6, which breaks Block 7, etc.
+//	The entire chain unravels from the point of tampering, and validation
+//	catches it instantly.
+//
+// FR-6 (Chain Validation):
+//
+//	The Validate() function checks five strict rules on every block:
+//	1. Recomputed hash matches the stored hash (catches data tampering).
+//	2. PrevHash matches the previous block's actual hash (catches link breaks).
+//	3. Hash satisfies the Proof-of-Work difficulty target (catches forged blocks).
+//	4. Heights are perfectly sequential (0, 1, 2, 3...).
+//	5. Timestamps only move forward (no time travel).
+//	It stops at the FIRST failure and reports exactly which block broke.
+//
+// =============================================================================
 package chain
 
 import (
@@ -5,11 +32,20 @@ import (
 	"strings"
 
 	"toychain/block"
+	"toychain/ledger"
 )
 
 // ValidationResult reports whether the chain is valid, and if not, exactly
 // where and why it first broke (FR-6: "identify the first offending block
 // on failure").
+//
+// CONCEPT: Why we report the FIRST failure only
+//
+//	Once a chain link is broken, everything after it is meaningless — a
+//	broken link at Block 5 makes Blocks 6, 7, 8... all invalid by
+//	extension. So we stop at the first failure and tell the user exactly
+//	which block failed and why, rather than flooding them with cascading
+//	errors.
 type ValidationResult struct {
 	Valid        bool
 	FailedHeight int    // -1 if Valid
@@ -17,29 +53,55 @@ type ValidationResult struct {
 }
 
 // Validate walks the chain from genesis to tip and checks four invariants
-// on every block:
+// on every block (FR-6: Chain Validation / Tamper Detection).
 //
-//  1. Recomputed hash: rehashing the block's stored fields must reproduce
-//     its stored Hash. If it doesn't, SOMETHING in the block was changed
-//     after mining — this is what catches tampering (FR-6's tamper-evidence
-//     scenario).
-//  2. Prev-hash link: block[i].PrevHash must equal block[i-1].Hash. This is
-//     what makes tampering with an OLD block visible even if that old
-//     block's own stored hash were somehow left self-consistent: the very
-//     next block still points at the original, now-orphaned hash.
-//  3. Proof-of-work: block[i].Hash must satisfy the difficulty target
-//     (skipped for genesis, which is exempt from mining).
-//  4. Height/timestamp consistency: heights must increase by exactly 1 from
-//     the previous block, and timestamps must be non-decreasing.
+// CONCEPT: The Five Checks Explained
 //
-// Validation stops at the FIRST failing block and reports it — later
-// blocks aren't checked, since a broken link early in the chain makes
-// everything after it meaningless anyway.
+//	CHECK 1 — Recomputed Hash vs. Stored Hash (TAMPER DETECTION):
+//	  We take the block's stored fields (Height, Timestamp, Transactions,
+//	  PrevHash, Nonce) and re-run them through SHA-256. If the result
+//	  doesn't match the stored Hash, it means SOMETHING in the block was
+//	  changed AFTER mining. This is the primary tamper-detection mechanism.
+//
+//	  Real-world analogy: It's like re-weighing a sealed package. If the
+//	  weight doesn't match what's on the label, someone opened it.
+//
+//	CHECK 2 — PrevHash Link Integrity (CHAIN CONTINUITY):
+//	  block[i].PrevHash must exactly equal block[i-1].Hash. This is what
+//	  makes the chain a CHAIN. Even if a tampered block's own stored hash
+//	  were somehow fixed to look self-consistent, the next block's PrevHash
+//	  still points at the ORIGINAL hash, catching the tampering.
+//
+//	  Real-world analogy: Each page in a notarised ledger has a reference
+//	  number to the previous page. If someone rips out page 5 and replaces
+//	  it, page 6 still references the original page 5's number.
+//
+//	CHECK 3 — Proof-of-Work Compliance (MINING LEGITIMACY):
+//	  block[i].Hash must start with at least `Difficulty` leading zeros.
+//	  This ensures the block was actually mined (not just fabricated with
+//	  a random hash). Genesis is exempt because it's hardcoded, not mined.
+//
+//	CHECK 4 — Height & Timestamp Consistency (STRUCTURAL INTEGRITY):
+//	  Heights must increase by exactly 1 (0, 1, 2, 3...) — no gaps,
+//	  no duplicates, no going backwards. Timestamps must be non-decreasing
+//	  (a block can't claim to be older than its predecessor).
 func (bc *Blockchain) Validate() ValidationResult {
+	// Build the PoW target string: e.g., Difficulty 3 → "000".
+	// Every non-genesis block's hash must start with this prefix.
 	target := strings.Repeat("0", bc.Difficulty)
 
+	// Keep a running ledger to validate transactions (FR-4 compliance during validation).
+	// Without this, someone could inject an illegal transaction directly into
+	// the data file and Validate() would miss it.
+	balances := ledger.NewBalances()
+
 	for i, b := range bc.Blocks {
-		// Check 1: stored hash matches a fresh recomputation.
+		// =====================================================================
+		// CHECK 1: TAMPER DETECTION — Does the stored hash match a fresh one?
+		// Re-hash the block from its stored fields. If someone changed ANY
+		// field (even one character in a transaction), the recomputed hash
+		// will differ from the stored hash, exposing the tampering.
+		// =====================================================================
 		if b.CalculateHash() != b.Hash {
 			return ValidationResult{
 				Valid: false, FailedHeight: b.Height,
@@ -50,7 +112,10 @@ func (bc *Blockchain) Validate() ValidationResult {
 		}
 
 		if i == 0 {
-			// Genesis: only check it carries the fixed prev-hash value.
+			// GENESIS BLOCK: Special case — it has no predecessor, so we only
+			// check that it carries the well-known all-zeros PrevHash (FR-2).
+			// Genesis is exempt from the PoW check because it's hardcoded
+			// into the system at startup, not mined.
 			if b.PrevHash != block.GenesisPrevHash {
 				return ValidationResult{
 					Valid: false, FailedHeight: b.Height,
@@ -62,7 +127,13 @@ func (bc *Blockchain) Validate() ValidationResult {
 
 		prev := bc.Blocks[i-1]
 
-		// Check 2: prev-hash link is intact.
+		// =====================================================================
+		// CHECK 2: CHAIN LINK — Does PrevHash match the previous block's hash?
+		// This is the fundamental chain integrity check. If someone tampers
+		// with an old block, that block's hash changes, but the next block's
+		// PrevHash still holds the ORIGINAL hash — creating a mismatch.
+		// This is what makes the blockchain "tamper-evident."
+		// =====================================================================
 		if b.PrevHash != prev.Hash {
 			return ValidationResult{
 				Valid: false, FailedHeight: b.Height,
@@ -72,7 +143,12 @@ func (bc *Blockchain) Validate() ValidationResult {
 			}
 		}
 
-		// Check 3: proof-of-work target satisfied.
+		// =====================================================================
+		// CHECK 3: PROOF-OF-WORK — Does the hash meet the difficulty target?
+		// The hash must start with `Difficulty` leading zeros. This proves
+		// the miner actually did the computational work to find a valid nonce,
+		// and didn't just fabricate a block with a random hash.
+		// =====================================================================
 		if !strings.HasPrefix(b.Hash, target) {
 			return ValidationResult{
 				Valid: false, FailedHeight: b.Height,
@@ -82,7 +158,11 @@ func (bc *Blockchain) Validate() ValidationResult {
 			}
 		}
 
-		// Check 4: height and timestamp consistency.
+		// =====================================================================
+		// CHECK 4: STRUCTURAL — Are heights sequential and timestamps valid?
+		// Heights must be exactly prev+1 (no gaps, no duplicates).
+		// Timestamps must be non-decreasing (no time travel).
+		// =====================================================================
 		if b.Height != prev.Height+1 {
 			return ValidationResult{
 				Valid: false, FailedHeight: b.Height,
@@ -99,7 +179,68 @@ func (bc *Blockchain) Validate() ValidationResult {
 					b.Height, b.Timestamp, prev.Timestamp),
 			}
 		}
+
+		// =====================================================================
+		// CHECK 5: LEDGER RULES — Replay the block's transactions.
+		// Even if the block itself is structurally sound (valid hashes), its
+		// transactions must still obey the laws of physics (no negative amounts,
+		// no overdrafts). We Apply() every transaction to our running balance sheet.
+		// =====================================================================
+		for _, tx := range b.Transactions {
+			if err := balances.Apply(tx); err != nil {
+				return ValidationResult{
+					Valid: false, FailedHeight: b.Height,
+					Reason: fmt.Sprintf("block %d contains invalid transaction: %v", b.Height, err),
+				}
+			}
+		}
 	}
 
+	// All blocks passed all checks — the chain is intact and untampered.
 	return ValidationResult{Valid: true, FailedHeight: -1}
 }
+
+// 5 strict validation methods:
+
+// 1. Hash Re-computation (Detects Content Tampering)
+
+// The Method: The system takes the block's data (the transactions, timestamp, nonce, etc.) and
+//  recalculates the SHA-256 hash from scratch.
+
+// What it checks: It compares this newly calculated hash to the hash
+// that is currently saved in the block. If they don't match perfectly,
+//  it means someone edited the data after it was mined.
+
+// 2. Previous Hash Link Integrity (Detects Chain Breaking)
+
+// The Method: The system looks at Block #5's PrevHash
+//  field and checks if it exactly matches Block #4's actual Hash.
+
+// What it checks: This ensures the blocks are chained together
+//  properly. If a hacker tampers with Block #4, Block #4's hash will change,
+//  causing Block #5's PrevHash to point to a hash that no longer exists, breaking the chain.
+
+// 3. Proof-of-Work Compliance (Detects Fake Blocks)
+
+// The Method: The system checks if the block's hash starts
+//  with the required number of zeros (e.g., 000... if the difficulty is 3).
+
+// What it checks: This proves that the miner actually did the heavy mathematical lifting to find a valid Nonce.
+//  It prevents hackers from instantly fabricating fake blocks out of thin air.
+
+// 4. Structural Integrity (Detects Out-of-Order Blocks)
+
+// The Method: The system checks two simple numbers: Height and Timestamp.
+
+// What it checks: The height must increase by exactly 1 every time (0, 1, 2, 3).
+//  No skipping numbers, no duplicates. The timestamp must only move forward
+//  (a block cannot claim it was created earlier than the block before it).
+
+// 5. Ledger Replay (Detects Illegal Money)
+
+// The Method: The system creates a blank ledger and replays every single transaction
+//  from the very first block up to the current block.
+
+// What it checks: This ensures the "laws of physics" of money are obeyed.
+//  Even if a block has perfect hashes, if it contains a transaction where Alice sends Bob 500 coins but Alice only has 10 coins,
+//  this check will catch the overdraft and reject the block. (This is the specific test we just added earlier today!)

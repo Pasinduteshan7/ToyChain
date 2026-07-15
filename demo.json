@@ -10,7 +10,7 @@
     },
     {
       "height": 1,
-      "timestamp": 1783595260,
+      "timestamp": 1784022084,
       "transactions": [
         {
           "sender": "",
@@ -20,31 +20,12 @@
         {
           "sender": "alice",
           "recipient": "bob",
-          "amount": 1000
+          "amount": 999999
         }
       ],
       "prev_hash": "6aeab8c4bb5331541554ccef35172b511c357480854f7cd468daac3495553dac",
-      "nonce": 1035,
-      "hash": "00092a617756eeaf236960c1f6daace8b958a6ccee51eef206f242dd76e8d36c"
-    },
-    {
-      "height": 2,
-      "timestamp": 1783595363,
-      "transactions": [
-        {
-          "sender": "",
-          "recipient": "alice",
-          "amount": 100
-        },
-        {
-          "sender": "alice",
-          "recipient": "bob",
-          "amount": 30
-        }
-      ],
-      "prev_hash": "00092a617756eeaf236960c1f6daace8b958a6ccee51eef206f242dd76e8d36c",
-      "nonce": 644,
-      "hash": "0009f37f51526e70aba20df1f6ef2aad58d38a98495568e57ec56f3d8d169092"
+      "nonce": 21529,
+      "hash": "0007cf5500fb1aa3b2a1485217e2b8e3531f5e537a66e14d70b0e989766862fc"
     }
   ],
   "difficulty": 3,

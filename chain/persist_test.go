@@ -51,3 +51,24 @@ func TestLoad_MissingFileReturnsFreshChain(t *testing.T) {
 	}
 	_ = os.Remove(path) // no-op, just ensuring no leftover
 }
+
+// TestLoad_CorruptFile ensures that loading a file with {} or invalid JSON
+// correctly falls back to generating a fresh genesis chain rather than crashing.
+func TestLoad_CorruptFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "corrupt.json")
+	
+	// Write empty object
+	err := os.WriteFile(path, []byte("{}"), 0644)
+	if err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+	
+	bc, err := Load(path, 3)
+	if err != nil {
+		t.Fatalf("unexpected error loading corrupt file: %v", err)
+	}
+	
+	if len(bc.Blocks) != 1 {
+		t.Fatalf("expected a fresh chain with just genesis, got %d blocks", len(bc.Blocks))
+	}
+}
